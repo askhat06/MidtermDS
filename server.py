@@ -1,9 +1,10 @@
-"""Counter server (Parts A and B).
+"""Counter server. One running copy of this program is one replica.
 
 Run:  python server.py --port 50051 --name replica-A
 """
 import argparse
 import threading
+import time
 from concurrent import futures
 
 import grpc
@@ -15,12 +16,15 @@ from clocks import EventLog, LamportClock
 
 class CounterServicer(counter_pb2_grpc.CounterServicer):
 
-    def __init__(self, name="replica-A", log_file=None, log_enabled=True):
+    def __init__(self, name="replica-A", fault="none", delay_ms=0, log_file=None, log_enabled=True):
         self._lock = threading.Lock()
         self._values = {}
         self._seen = {}
         self._clock = LamportClock()
         self._log = EventLog(name, log_file, log_enabled)
+        self._fault = fault
+        self._delay_ms = delay_ms
+        self._fault_used = False
 
     def Increment(self, request, context):
         now = self._clock.update(request.lamport_time)
@@ -40,6 +44,10 @@ class CounterServicer(counter_pb2_grpc.CounterServicer):
                 now = self._clock.tick()
                 self._log.write("APPLY", f"counter={request.counter_id} -> {new_value}", now)
 
+        if self._fault == "delay" and not self._fault_used:
+            self._fault_used = True
+            time.sleep(self._delay_ms / 1000)
+
         now = self._clock.tick()
         self._log.write("SEND", f"IncrementReply(new_value={new_value})", now)
         return counter_pb2.IncrementReply(
@@ -58,12 +66,12 @@ class CounterServicer(counter_pb2_grpc.CounterServicer):
         return counter_pb2.GetReply(value=value, found=found, lamport_time=now)
 
 
-def start_server(port, name="replica-A", log_file=None, log_enabled=True):
+def start_server(port, name="replica-A", fault="none", delay_ms=0, log_file=None, log_enabled=True):
     """Start the server and return (server, port).
 
     Port 0 means: the operating system picks a free port. The tests use this.
     """
-    servicer = CounterServicer(name, log_file, log_enabled)
+    servicer = CounterServicer(name, fault, delay_ms, log_file, log_enabled)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=8))
     counter_pb2_grpc.add_CounterServicer_to_server(servicer, server)
     real_port = server.add_insecure_port("127.0.0.1:" + str(port))
@@ -75,10 +83,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=50051)
     parser.add_argument("--name", default="replica-A")
+    parser.add_argument("--fault", default="none", choices=["none", "delay"])
+    parser.add_argument("--delay-ms", type=int, default=0)
     parser.add_argument("--log-file", default=None)
     args = parser.parse_args()
 
-    server, port = start_server(args.port, args.name, args.log_file)
+    server, port = start_server(args.port, args.name, args.fault, args.delay_ms, args.log_file)
     print(f"[{args.name}] is listening on port {port}", flush=True)
     try:
         server.wait_for_termination()
