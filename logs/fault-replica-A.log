@@ -1,0 +1,5 @@
+[replica-A] RECV      Increment(counter=x, delta=5)                      L=2   (received L=1)
+[replica-A] APPLY     counter=x -> 5                                     L=3
+[replica-A] RECV      Increment(counter=x, delta=5)                      L=4   (received L=2)
+[replica-A] SEND      IncrementReply(new_value=5)                        L=5
+[replica-A] SEND      IncrementReply(new_value=5)                        L=6

@@ -1,0 +1,3 @@
+[client-1] SEND       Increment(counter=x, delta=5)                      L=1
+[client-1] SEND       Increment(counter=x, delta=5)                      L=2
+[client-1] RECV       IncrementReply(new_value=5)                        L=6   (received L=5)
