@@ -5,18 +5,36 @@ consistency: `QUORUM_CP` and `ALWAYS_AP` writes, `LINEARIZABLE` and `FOLLOWER_ST
 leaseholder for the key range `[a-z]`, real network partitions between the replicas, and
 last-write-wins or union conflict resolution.
 
-All commands are run from the `lab6_7` folder. They are written for Windows; on Linux and macOS
-use `python3` and `source ../.venv/bin/activate`.
+All commands are run from this folder. They are written for Windows; on Linux and macOS use
+`python3` and `source .venv/bin/activate`.
+
+## Deliverables
+
+| Handout item | File |
+|---|---|
+| Task 1: protocol | `kvstore.proto` |
+| Task 2: server with configurable consistency | `server.py` |
+| Client | `client.py` |
+| Task 3: test suite (26 tests) with the partition wrapper | `tests/test_cap.py` |
+| Task 4: benchmark | `perf_cap_bench.py` |
+| Lab report | `Lab_Report_CAP.pdf` |
+
+Everything else supports these files: the generated stubs, the socket-level network
+(`netsim.py`) and the process launcher (`cluster.py`) used by the tests and the benchmark, a demo
+(`demo.py`) and the captured outputs (`results/`).
 
 ## 1. Setup
 
-The lab uses the virtual environment in the repository root.
+Tested with Python 3.14 on Windows 11.
 
 ```
-cd lab6_7
-..\.venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+Inside the course repository the virtual environment of the repository root can be used
+instead: `..\.venv\Scripts\activate`.
 
 `kvstore_pb2.py` and `kvstore_pb2_grpc.py` are generated from `kvstore.proto` and are already in
 the folder. After a change to the proto file, generate them again:
@@ -46,6 +64,8 @@ the lab and prints the client results together with the replicas' own log lines 
 10. the same conflict with `--merge union`, where both writes survive.
 
 `python demo.py --step` waits for Enter before every step (useful when presenting).
+The replicas write their log files to the system temp folder (the demo prints the path), so runs
+do not add files to this folder.
 
 To try things yourself:
 

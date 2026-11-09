@@ -3,6 +3,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 from client import KVClient
@@ -12,6 +13,8 @@ from server import DEFAULT_PORTS
 LAB_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER = os.path.join(LAB_DIR, "server.py")
 NODE_IDS = ["A", "B", "C"]
+# The replicas' log files go to the system temp folder, so runs do not clutter the lab folder.
+LOG_ROOT = os.path.join(tempfile.gettempdir(), "kvstore-lab6_7-logs")
 
 
 def free_port():
@@ -55,7 +58,7 @@ class Cluster:
         self.max_staleness_ms = max_staleness_ms
         self.link_delay_ms = link_delay_ms
         self.clock_skew_ms = dict(clock_skew_ms or {})
-        self.log_dir = log_dir or os.path.join(LAB_DIR, "logs", "cluster")
+        self.log_dir = log_dir or os.path.join(LOG_ROOT, "cluster")
         self.quiet = quiet
         self.processes = {}
         self.log_files = {}

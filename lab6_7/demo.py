@@ -7,7 +7,7 @@ import sys
 import time
 
 from client import KVError
-from cluster import LAB_DIR, NODE_IDS, Cluster, default_ports_if_free
+from cluster import LOG_ROOT, NODE_IDS, Cluster, default_ports_if_free
 from server import clock_text, vclock_text
 
 N = len(NODE_IDS)
@@ -220,7 +220,7 @@ class Demo:
     def union_demo(self):
         old = self.cluster
         old.stop()
-        log_dir = os.path.join(LAB_DIR, "logs", "demo-union")
+        log_dir = os.path.join(LOG_ROOT, "demo-union")
         clean_logs(log_dir)
         cluster = Cluster(ports=old.ports, merge="union", log_dir=log_dir)
         cluster.start()
@@ -389,7 +389,7 @@ def main():
     ports = default_ports_if_free()
     if ports is None:
         print("Ports 50051-50053 are busy (are servers already running?), using free ports instead.")
-    log_dir = os.path.join(LAB_DIR, "logs", "interactive" if args.interactive else "demo")
+    log_dir = os.path.join(LOG_ROOT, "interactive" if args.interactive else "demo")
     clean_logs(log_dir)
     cluster = Cluster(ports=ports, log_dir=log_dir)
     print("starting replicas A, B, C ...")

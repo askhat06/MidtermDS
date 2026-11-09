@@ -8,7 +8,7 @@ import sys
 import time
 
 from client import KVError
-from cluster import LAB_DIR, Cluster
+from cluster import LAB_DIR, LOG_ROOT, Cluster
 
 KEY = "bench"
 
@@ -54,6 +54,7 @@ def main():
                         help="extra delay on every replica-to-replica link (simulated WAN), default 0")
     parser.add_argument("--skip-partition", action="store_true", help="only the healthy-cluster runs")
     parser.add_argument("--out", default=os.path.join(LAB_DIR, "results"), help="folder for the result files")
+    parser.add_argument("--json", action="store_true", help="also save the raw numbers as a JSON file")
     args = parser.parse_args()
 
     n = args.iterations
@@ -64,7 +65,7 @@ def main():
         print(text, flush=True)
         lines.append(text)
 
-    log_dir = os.path.join(LAB_DIR, "logs", "bench")
+    log_dir = os.path.join(LOG_ROOT, "bench")
     cluster = Cluster(quiet=True, link_delay_ms=args.link_delay_ms, max_staleness_ms=bound, log_dir=log_dir)
     print("starting 3 replicas ...", flush=True)
     cluster.start()
@@ -155,11 +156,12 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     suffix = f"_wan{args.link_delay_ms}ms" if args.link_delay_ms else ""
-    with open(os.path.join(args.out, f"perf_cap_bench{suffix}.json"), "w", encoding="utf-8") as file:
-        json.dump({"iterations": n, "max_staleness_ms": bound, "link_delay_ms": args.link_delay_ms,
-                   "results": results}, file, indent=2)
     with open(os.path.join(args.out, f"perf_cap_bench{suffix}.txt"), "w", encoding="utf-8") as file:
         file.write("\n".join(lines) + "\n")
+    if args.json:
+        with open(os.path.join(args.out, f"perf_cap_bench{suffix}.json"), "w", encoding="utf-8") as file:
+            json.dump({"iterations": n, "max_staleness_ms": bound, "link_delay_ms": args.link_delay_ms,
+                       "results": results}, file, indent=2)
     print(f"\nsaved to {args.out}", flush=True)
 
 
