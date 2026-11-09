@@ -1,0 +1,35 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\askha\PycharmProjects\DS_midterm\.venv\Scripts\python.exe
+rootdir: C:\Users\askha\PycharmProjects\DS_midterm\lab6_7
+configfile: pytest.ini
+testpaths: tests
+collecting ... collected 26 items
+
+tests/test_cap.py::test_cp_write_on_majority_side_succeeds PASSED        [  3%]
+tests/test_cap.py::test_cp_write_on_minority_side_fails PASSED           [  7%]
+tests/test_cap.py::test_isolated_leaseholder_cannot_commit_alone PASSED  [ 11%]
+tests/test_cap.py::test_ap_write_on_minority_side_is_accepted PASSED     [ 15%]
+tests/test_cap.py::test_partition_recovery_merges_divergent_values_with_lww PASSED [ 19%]
+tests/test_cap.py::test_lww_follows_the_timestamp_not_the_arrival_order PASSED [ 23%]
+tests/test_cap.py::test_union_merge_keeps_both_concurrent_writes PASSED  [ 26%]
+tests/test_cap.py::test_lww_with_clock_skew_keeps_the_older_write PASSED [ 30%]
+tests/test_cap.py::test_linearizable_read_is_answered_by_the_leaseholder PASSED [ 34%]
+tests/test_cap.py::test_linearizable_read_fails_on_the_minority_side PASSED [ 38%]
+tests/test_cap.py::test_follower_read_is_served_locally_with_bounded_lag PASSED [ 42%]
+tests/test_cap.py::test_follower_read_stays_available_but_stale_during_partition PASSED [ 46%]
+tests/test_cap.py::test_follower_read_beyond_max_staleness_is_rejected PASSED [ 50%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W1-R1] PASSED [ 53%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W1-R2] PASSED [ 57%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W1-R3] PASSED [ 61%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W2-R1] PASSED [ 65%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W2-R2] PASSED [ 69%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W2-R3] PASSED [ 73%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W3-R1] PASSED [ 76%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W3-R2] PASSED [ 80%]
+tests/test_cap.py::test_read_quorum_sees_latest_write_only_if_r_plus_w_exceeds_n[W3-R3] PASSED [ 84%]
+tests/test_cap.py::test_follower_crash_then_restart_catches_up PASSED    [ 88%]
+tests/test_cap.py::test_leaseholder_crash_blocks_cp_but_not_follower_reads_or_ap PASSED [ 92%]
+tests/test_cap.py::test_retry_with_same_idempotency_key_is_applied_once PASSED [ 96%]
+tests/test_cap.py::test_key_outside_the_leaseholder_range_is_rejected PASSED [100%]
+
+============================= 26 passed in 8.92s ==============================

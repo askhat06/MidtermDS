@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package kvstore;
+
+// ---------------------------------------------------------------------------
+// Public API (Task 1). Clients only use this part.
+// ---------------------------------------------------------------------------
+
+enum ReadConsistency {
+  LINEARIZABLE = 0;   // Must hit Leaseholder / Quorum
+  FOLLOWER_STALE = 1; // Served by local replica; bounded staleness
+}
+
+enum WriteStrategy {
+  QUORUM_CP = 0; // Requires majority (N/2 + 1) ACKs; fails if quorum lost
+  ALWAYS_AP = 1; // Accepts write on any available node; logs vector clock / timestamp
+}
+
+message GetRequest {
+  string key = 1;
+  ReadConsistency consistency = 2;
+  uint32 max_staleness_ms = 3; // Used when consistency == FOLLOWER_STALE
+}
+
+message GetReply {
+  string value = 1;
+  bool found = 2;
+  uint64 read_timestamp = 3;
+  bool is_stale = 4;
+}
+
+message PutRequest {
+  string key = 1;
+  string value = 2;
+  string idempotency_key = 3;
+  WriteStrategy strategy = 4;
+  uint64 timestamp = 5;
+}
+
+message PutReply {
+  bool success = 1;
+  uint32 acks_received = 2;
+  string error_message = 3;
+}
+
+service KeyValueStore {
+  rpc Get (GetRequest) returns (GetReply);
+  rpc Put (PutRequest) returns (PutReply);
+}
+
+// ---------------------------------------------------------------------------
+// Internal replica-to-replica protocol. Not part of the public API.
+// All timestamps are hybrid logical clock values in microseconds since 1970.
+// ---------------------------------------------------------------------------
+
+message Version {
+  string key = 1;
+  string value = 2;
+  uint64 timestamp = 3;            // last-write-wins timestamp of this write
+  string origin = 4;               // node that accepted the write
+  map<string, uint64> vclock = 5;  // vector clock: node -> time of its last write to this key
+}
+
+// Leaseholder -> follower, first phase of a QUORUM_CP write.
+// The follower stores the version as "staged" and acknowledges it.
+// The version becomes visible on the follower only after the commit arrives with Sync.
+message PrepareRequest {
+  Version version = 1;
+  string leaseholder = 2;
+}
+
+message PrepareReply {
+  bool ok = 1;
+  string node = 2;
+}
+
+// Anti-entropy: every node periodically pushes the versions that changed since the
+// last successful push to that peer. From the leaseholder it also carries the closed
+// timestamp: "every QUORUM_CP write up to this time is included".
+message SyncRequest {
+  string sender = 1;
+  repeated Version versions = 2;
+  uint64 closed_timestamp = 3;      // 0 if the sender is not the leaseholder
+  string expected_incarnation = 4;  // receiver's process id as the sender knows it
+  bool full = 5;                    // versions is the sender's whole store
+}
+
+message SyncReply {
+  string node = 1;
+  string incarnation = 2;  // changes when the process restarts with an empty store
+  uint32 merged = 3;
+}
+
+message ReadLocalRequest {
+  string key = 1;
+}
+
+message ReadLocalReply {
+  bool found = 1;
+  Version version = 2;
+  string node = 3;
+}
+
+message StatusRequest {}
+
+message StatusReply {
+  string node = 1;
+  string role = 2;                     // "leaseholder" or "follower"
+  string leaseholder = 3;
+  uint64 closed_timestamp = 4;
+  int64 lag_ms = 5;                    // follower: now - closed timestamp, -1 if unknown
+  uint32 keys = 6;
+  uint32 staged = 7;
+  string merge_policy = 8;
+  repeated string reachable_peers = 9;
+  string incarnation = 10;
+  bool recovering = 11;
+}
+
+service Replica {
+  rpc Prepare (PrepareRequest) returns (PrepareReply);
+  rpc Sync (SyncRequest) returns (SyncReply);
+  rpc ReadLocal (ReadLocalRequest) returns (ReadLocalReply);
+  rpc Status (StatusRequest) returns (StatusReply);
+}

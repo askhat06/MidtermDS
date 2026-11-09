@@ -1,0 +1,210 @@
+starting replicas A, B, C ...
+CAP theorem / PACELC demo: replicated key-value store, N = 3
+  A  127.0.0.1:50051  leaseholder for [a-z]
+  B  127.0.0.1:50052  follower
+  C  127.0.0.1:50053  follower
+  Replica-to-replica traffic goes through TCP proxies (netsim.py), so the network can be cut.
+  Lines starting with '|' are the replicas' own logs.
+    | 22:29:16.798250 [B] START    listening on 127.0.0.1:50052 | follower (leaseholder is A) | merge=lww | peers: A=127.0.0.1:61327, C=127.0.0.1:61328
+    | 22:29:16.798268 [A] START    listening on 127.0.0.1:50051 | LEASEHOLDER for range [a-z] | merge=lww | peers: B=127.0.0.1:61325, C=127.0.0.1:61326
+    | 22:29:16.798288 [C] START    listening on 127.0.0.1:50053 | follower (leaseholder is A) | merge=lww | peers: A=127.0.0.1:61329, B=127.0.0.1:61330
+    | 22:29:16.910364 [A] NET      connected to peer B
+    | 22:29:16.910521 [C] NET      connected to peer B
+    | 22:29:16.910626 [B] NET      connected to peer A
+    | 22:29:16.910793 [A] NET      connected to peer C
+    | 22:29:16.910990 [B] NET      connected to peer C
+    | 22:29:16.922726 [C] NET      connected to peer A
+
+====================================================================================================
+Step 1. QUORUM_CP write through follower B (Task 2: B forwards it to leaseholder A)
+====================================================================================================
+  A stages the write on the followers (Prepare), commits after a majority of acks,
+  then the commit reaches the followers through anti-entropy (Sync).
+
+  > put cart='milk' QUORUM_CP via B
+    OK    success=True, acks_received=3/3
+    | 22:29:17.162981 [C] PREPARE  cart='milk' staged for leaseholder A -> ack
+    | 22:29:17.163106 [B] PREPARE  cart='milk' staged for leaseholder A -> ack
+    | 22:29:17.163501 [A] APPLY    cart='milk' ts=22:29:17.162 vc={A@22:29:17.162} [commit]
+    | 22:29:17.163565 [A] PUT      cart='milk' QUORUM_CP ts=22:29:17.162 -> COMMIT, acks 3/3
+    | 22:29:17.164088 [B] APPLY    cart='milk' ts=22:29:17.162 vc={A@22:29:17.162} [sync from A]
+    | 22:29:17.164112 [C] APPLY    cart='milk' ts=22:29:17.162 vc={A@22:29:17.162} [sync from A]
+    | 22:29:17.164135 [B] PUT      cart='milk' QUORUM_CP -> forwarded to leaseholder A: success=True, acks 3/3
+
+  state of 'cart' on every replica:
+    A  'milk'           ts=22:29:17.162  vc={A@22:29:17.162}
+    B  'milk'           ts=22:29:17.162  vc={A@22:29:17.162}
+    C  'milk'           ts=22:29:17.162  vc={A@22:29:17.162}
+
+====================================================================================================
+Step 2. The two read paths (Task 2)
+====================================================================================================
+  LINEARIZABLE: C proxies the read to the remote leaseholder A (two hops).
+  FOLLOWER_STALE: C answers from its own copy (one hop), marked is_stale=True.
+
+  > get cart LINEARIZABLE via C
+    OK    value='milk'  served by A, is_stale=False, read_ts=22:29:17.343, 1.02 ms
+    | 22:29:17.343805 [A] GET      cart LINEARIZABLE on leaseholder -> 'milk'
+    | 22:29:17.344043 [C] GET      cart LINEARIZABLE -> proxied to leaseholder A -> 'milk'
+
+  > get cart FOLLOWER_STALE max_staleness_ms=5000 via C
+    OK    value='milk'  served by C, is_stale=True, lag 25 ms, read_ts=22:29:17.491, 0.74 ms
+    | 22:29:17.516681 [C] GET      cart FOLLOWER_STALE on follower (lag 25 ms <= 5000 ms) -> 'milk'
+
+====================================================================================================
+Step 3. Network partition: DC-1 {A, B} | DC-2 {C}
+====================================================================================================
+  partitioned: {A, B} | {C}
+    | 22:29:17.707394 [A] NET      peer C is UNREACHABLE
+    | 22:29:17.769221 [C] NET      peer A is UNREACHABLE
+    | 22:29:17.769338 [B] NET      peer C is UNREACHABLE
+    | 22:29:17.769419 [C] NET      peer B is UNREACHABLE
+
+====================================================================================================
+Step 4. CP mode under the partition (Task 3, Part A)
+====================================================================================================
+  Majority side: 2 of 3 replicas acknowledge -> committed.
+
+  > put cart='milk,eggs' QUORUM_CP via A
+    OK    success=True, acks_received=2/3
+    | 22:29:17.857732 [B] PREPARE  cart='milk,eggs' staged for leaseholder A -> ack
+    | 22:29:17.858081 [A] APPLY    cart='milk,eggs' ts=22:29:17.857 vc={A@22:29:17.857} [commit]
+    | 22:29:17.858130 [A] PUT      cart='milk,eggs' QUORUM_CP ts=22:29:17.857 -> COMMIT, acks 2/3
+    | 22:29:17.858604 [B] APPLY    cart='milk,eggs' ts=22:29:17.857 vc={A@22:29:17.857} [sync from A]
+  Minority side: C cannot reach the leaseholder or a majority -> rejected, nothing written.
+
+  > put cart='milk,bread' QUORUM_CP via C
+    FAIL  success=False, acks_received=0: ReplicaUnavailableError: quorum lost - leaseholder A is unreachable from C, so no majority (2 of 3) can acknowledge the write
+    | 22:29:18.024629 [C] PUT      cart='milk,bread' QUORUM_CP -> FAILED, ReplicaUnavailableError: quorum lost - leaseholder A is unreachable from C, so no majority (2 of 3) can acknowledge the write
+
+====================================================================================================
+Step 5. Reads during the partition (PACELC: if Partition, choose A or C)
+====================================================================================================
+
+  > get cart LINEARIZABLE via C
+    FAIL  ReplicaUnavailableError: LEASEHOLDER_UNAVAILABLE: leaseholder A is unreachable from C, a linearizable read is not possible on this side of the partition
+    | 22:29:18.184716 [C] GET      cart LINEARIZABLE -> leaseholder A unreachable -> UNAVAILABLE
+  C refuses the linearizable read (consistency), but a follower read stays available:
+
+  > get cart FOLLOWER_STALE max_staleness_ms=5000 via C
+    OK    value='milk'  served by C, is_stale=True, lag 746 ms, read_ts=22:29:17.599, 0.87 ms
+    | 22:29:18.345812 [C] GET      cart FOLLOWER_STALE on follower (lag 746 ms <= 5000 ms) -> 'milk'
+  The value is old: 'milk,eggs' was committed in DC-1 and C cannot know it.
+
+====================================================================================================
+Step 6. AP mode under the partition (Task 3, Part B)
+====================================================================================================
+  ALWAYS_AP is accepted by the one replica that can be reached (sloppy quorum).
+
+  > put cart='milk,bread' ALWAYS_AP via C
+    OK    success=True, acks_received=1/3
+    | 22:29:18.506741 [C] APPLY    cart='milk,bread' ts=22:29:18.506 vc={A@22:29:17.162, C@22:29:18.506} [local write]
+    | 22:29:18.507167 [C] PUT      cart='milk,bread' ALWAYS_AP ts=22:29:18.506 vc={A@22:29:17.162, C@22:29:18.506} -> ACCEPTED, acks 1/3 (sloppy quorum: the other replicas get it after the partition heals)
+
+  state of 'cart' on every replica:
+    A  'milk,eggs'      ts=22:29:17.857  vc={A@22:29:17.857}
+    B  'milk,eggs'      ts=22:29:17.857  vc={A@22:29:17.857}
+    C  'milk,bread'     ts=22:29:18.506  vc={A@22:29:17.162, C@22:29:18.506}
+  The replicas now disagree: two concurrent versions (look at the vector clocks).
+
+====================================================================================================
+Step 7. Bounded staleness: C stops hearing from the leaseholder
+====================================================================================================
+
+  > get cart FOLLOWER_STALE max_staleness_ms=1500 via C
+    FAIL  StaleReadExceededError: STALE_READ_EXCEEDED: follower C lags 1531 ms behind the leaseholder, max_staleness_ms=1500
+    | 22:29:19.130303 [C] GET      cart FOLLOWER_STALE: follower lags 1531 ms behind the leaseholder, max_staleness_ms=1500 -> STALE_READ_EXCEEDED
+  With a looser bound the same follower still answers:
+
+  > get cart FOLLOWER_STALE max_staleness_ms=5000 via C
+    OK    value='milk,bread'  served by C, is_stale=True, lag 1694 ms, read_ts=22:29:17.599, 1.11 ms
+    | 22:29:19.293654 [C] GET      cart FOLLOWER_STALE on follower (lag 1694 ms <= 5000 ms) -> 'milk,bread'
+
+====================================================================================================
+Step 8. The partition heals: anti-entropy + last-write-wins
+====================================================================================================
+    | 22:29:19.594155 [C] MERGE    cart: conflict, last-write-wins -> kept 'milk,bread' (ts 22:29:18.506), dropped 'milk,eggs' from A (ts 22:29:17.857) [sync from A]
+    | 22:29:19.594430 [A] NET      peer C is reachable again
+    | 22:29:19.717616 [B] MERGE    cart: conflict, last-write-wins -> 'milk,bread' (ts 22:29:18.506), local was 'milk,eggs' (ts 22:29:17.857) [sync from C]
+    | 22:29:19.718025 [C] NET      peer B is reachable again
+    | 22:29:19.825056 [A] MERGE    cart: conflict, last-write-wins -> 'milk,bread' (ts 22:29:18.506), local was 'milk,eggs' (ts 22:29:17.857) [sync from B]
+    | 22:29:19.825302 [C] NET      peer A is reachable again
+    | 22:29:20.039189 [B] NET      peer C is reachable again
+
+  state of 'cart' on every replica:
+    A  'milk,bread'     ts=22:29:18.506  vc={A@22:29:17.162, C@22:29:18.506}
+    B  'milk,bread'     ts=22:29:18.506  vc={A@22:29:17.162, C@22:29:18.506}
+    C  'milk,bread'     ts=22:29:18.506  vc={A@22:29:17.162, C@22:29:18.506}
+  All replicas converged to 'milk,bread': the concurrent write with the higher timestamp.
+  The other one ('milk,eggs' from DC-1) is silently lost - the price of LWW.
+
+  > get cart LINEARIZABLE via C
+    OK    value='milk,bread'  served by A, is_stale=False, read_ts=22:29:20.061, 1.01 ms
+    | 22:29:20.061082 [A] GET      cart LINEARIZABLE on leaseholder -> 'milk,bread'
+    | 22:29:20.061339 [C] GET      cart LINEARIZABLE -> proxied to leaseholder A -> 'milk,bread'
+
+====================================================================================================
+Step 9. Quorum arithmetic: does a read quorum of R see a write acknowledged by W?
+====================================================================================================
+
+  N = 3. The write reaches exactly W replicas (partition), then every read set of size R
+  is asked; it returns the version with the highest timestamp.
+
+    W  R  R+W  R+W>N   write acks  read sets  stale read sets  which
+    1  1  2    no      1           3          2                {B} {C}
+    1  2  3    no      1           3          1                {B,C}
+    1  3  4    yes     1           1          0                -
+    2  1  3    no      2           3          1                {C}
+    2  2  4    yes     2           3          0                -
+    2  3  5    yes     2           1          0                -
+    3  1  4    yes     3           3          0                -
+    3  2  5    yes     3           3          0                -
+    3  3  6    yes     3           1          0                -
+
+  Stale reads happen only when R + W <= N: then a read set can miss every replica of the write.
+
+====================================================================================================
+Step 10. The same conflict with --merge union (Dynamo shopping cart)
+====================================================================================================
+  New cluster started with --merge union.
+
+  > put cart='milk' QUORUM_CP via A
+    OK    success=True, acks_received=3/3
+    | 22:29:22.252620 [B] PREPARE  cart='milk' staged for leaseholder A -> ack
+    | 22:29:22.252699 [C] PREPARE  cart='milk' staged for leaseholder A -> ack
+    | 22:29:22.253050 [A] APPLY    cart='milk' ts=22:29:22.252 vc={A@22:29:22.252} [commit]
+    | 22:29:22.253096 [A] PUT      cart='milk' QUORUM_CP ts=22:29:22.252 -> COMMIT, acks 3/3
+    | 22:29:22.253528 [B] APPLY    cart='milk' ts=22:29:22.252 vc={A@22:29:22.252} [sync from A]
+    | 22:29:22.253638 [C] APPLY    cart='milk' ts=22:29:22.252 vc={A@22:29:22.252} [sync from A]
+  partitioned: {A, B} | {C}
+
+  > put cart='milk,eggs' ALWAYS_AP via A
+    OK    success=True, acks_received=2/3
+    | 22:29:22.435462 [A] APPLY    cart='milk,eggs' ts=22:29:22.435 vc={A@22:29:22.435} [local write]
+    | 22:29:22.436326 [B] APPLY    cart='milk,eggs' ts=22:29:22.435 vc={A@22:29:22.435} [sync from A]
+    | 22:29:22.436845 [A] NET      peer C is UNREACHABLE
+    | 22:29:22.436960 [C] NET      peer B is UNREACHABLE
+    | 22:29:22.437029 [C] NET      peer A is UNREACHABLE
+    | 22:29:22.437079 [A] PUT      cart='milk,eggs' ALWAYS_AP ts=22:29:22.435 vc={A@22:29:22.435} -> ACCEPTED, acks 2/3 (sloppy quorum: the other replicas get it after the partition heals)
+    | 22:29:22.437248 [B] NET      peer C is UNREACHABLE
+
+  > put cart='milk,bread' ALWAYS_AP via C
+    OK    success=True, acks_received=1/3
+    | 22:29:22.621509 [C] APPLY    cart='milk,bread' ts=22:29:22.621 vc={A@22:29:22.252, C@22:29:22.621} [local write]
+    | 22:29:22.622005 [C] PUT      cart='milk,bread' ALWAYS_AP ts=22:29:22.621 vc={A@22:29:22.252, C@22:29:22.621} -> ACCEPTED, acks 1/3 (sloppy quorum: the other replicas get it after the partition heals)
+  partition healed
+    | 22:29:22.977979 [A] MERGE    cart: conflict, union merge -> 'bread,eggs,milk' (ts 22:29:22.621), local was 'milk,eggs' (ts 22:29:22.435) [sync from C]
+    | 22:29:22.978334 [C] NET      peer A is reachable again
+    | 22:29:23.009014 [B] APPLY    cart='bread,eggs,milk' ts=22:29:22.621 vc={A@22:29:22.435, C@22:29:22.621} [sync from A]
+    | 22:29:23.009138 [C] APPLY    cart='bread,eggs,milk' ts=22:29:22.621 vc={A@22:29:22.435, C@22:29:22.621} [sync from A]
+    | 22:29:23.009420 [A] NET      peer C is reachable again
+    | 22:29:23.088035 [C] NET      peer B is reachable again
+    | 22:29:23.088053 [B] NET      peer C is reachable again
+
+  state of 'cart' on every replica:
+    A  'bread,eggs,milk' ts=22:29:22.621  vc={A@22:29:22.435, C@22:29:22.621}
+    B  'bread,eggs,milk' ts=22:29:22.621  vc={A@22:29:22.435, C@22:29:22.621}
+    C  'bread,eggs,milk' ts=22:29:22.621  vc={A@22:29:22.435, C@22:29:22.621}
+  Union merge keeps both concurrent carts: 'bread,eggs,milk' (LWW kept only one of them).
+
+Done. Logs of the replicas: C:\Users\askha\PycharmProjects\DS_midterm\lab6_7\logs\demo

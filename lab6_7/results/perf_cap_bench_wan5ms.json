@@ -1,0 +1,61 @@
+{
+  "iterations": 1000,
+  "max_staleness_ms": 5000,
+  "link_delay_ms": 5,
+  "results": {
+    "lin_remote": {
+      "attempts": 1000,
+      "ok": 1000,
+      "errors": {},
+      "availability": 100.0,
+      "median": 11.840600000141421,
+      "p95": 13.544699999329168
+    },
+    "follower": {
+      "attempts": 1000,
+      "ok": 1000,
+      "errors": {},
+      "availability": 100.0,
+      "median": 0.3480000013951212,
+      "p95": 0.4877999999735039
+    },
+    "lin_direct": {
+      "attempts": 1000,
+      "ok": 1000,
+      "errors": {},
+      "availability": 100.0,
+      "median": 0.3376499989826698,
+      "p95": 0.41449999844189733
+    },
+    "lin_remote_partition": {
+      "attempts": 1000,
+      "ok": 0,
+      "errors": {
+        "LEASEHOLDER_UNAVAILABLE": 1000
+      },
+      "availability": 0.0,
+      "median": null,
+      "p95": null
+    },
+    "follower_partition": {
+      "attempts": 1000,
+      "ok": 1000,
+      "errors": {},
+      "availability": 100.0,
+      "median": 0.34140000025217887,
+      "p95": 0.4186000005574897
+    },
+    "partition_run_s": 0.8042507999998634,
+    "lag_after_wait_ms": 5039,
+    "follower_partition_late": {
+      "attempts": 1000,
+      "ok": 0,
+      "errors": {
+        "STALE_READ_EXCEEDED": 1000
+      },
+      "availability": 0.0,
+      "median": null,
+      "p95": null
+    }
+  }
+}

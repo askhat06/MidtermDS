@@ -1,0 +1,23 @@
+PACELC read benchmark (Task 4)
+3 replicas on localhost, 1000 sequential Get requests per scenario, client next to follower C.
+Leaseholder A is the remote node. FOLLOWER_STALE uses max_staleness_ms = 5000.
+Simulated WAN: every replica-to-replica link adds 5 ms per direction.
+Machine: Windows-11-10.0.26200-SP0, Python 3.14.6
+
+Table 1. Lab table. Latency: healthy cluster. Availability: healthy / during the partition.
+| Read Mode | Target Node | Median Latency (ms) | p95 Latency (ms) | Read Availability (%) |
+|---|---|---|---|---|
+| Linearizable | Leaseholder (Remote) | 11.84 | 13.54 | 100.0 / 0.0 |
+| Follower Stale | Local Follower | 0.35 | 0.49 | 100.0 / 100.0 |
+
+Table 2. Every scenario in detail.
+| Scenario | Network | Requests | Successful | Availability (%) | Median (ms) | p95 (ms) | Errors |
+|---|---|---|---|---|---|---|---|
+| Linearizable via C -> leaseholder A | healthy | 1000 | 1000 | 100.0 | 11.84 | 13.54 | - |
+| Follower stale on C | healthy | 1000 | 1000 | 100.0 | 0.35 | 0.49 | - |
+| Linearizable via A (client next to leaseholder) | healthy | 1000 | 1000 | 100.0 | 0.34 | 0.41 | - |
+| Linearizable via C -> leaseholder A | partition, first 0.8 s | 1000 | 0 | 0.0 | - | - | LEASEHOLDER_UNAVAILABLE x1000 |
+| Follower stale on C | partition, first 0.8 s | 1000 | 1000 | 100.0 | 0.34 | 0.42 | - |
+| Follower stale on C | partition, C lag 5039 ms > 5000 ms | 1000 | 0 | 0.0 | - | - | STALE_READ_EXCEEDED x1000 |
+
+Linearizable via C costs 34.0x the median latency of a follower read (an extra hop to the leaseholder).
